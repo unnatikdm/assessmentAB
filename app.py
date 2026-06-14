@@ -216,11 +216,11 @@ def api_summarize(request: SummarizeRequest):
 
 @app.get("/api/metrics")
 def api_metrics():
-    search_lats = execution_stats["search_latencies"] or [0.15, 0.22, 0.18]
-    gen_lats = execution_stats["generation_latencies"] or [2.4, 3.1, 2.8]
-    sum_lats = execution_stats["summary_latencies"] or [3.5, 4.2, 3.9]
-    similarities = execution_stats["retrieval_similarities"] or [0.72, 0.65, 0.81, 0.59]
-    compress_ratios = execution_stats["compression_ratios"] or [0.12, 0.08, 0.15]
+    search_lats = execution_stats["search_latencies"]
+    gen_lats = execution_stats["generation_latencies"]
+    sum_lats = execution_stats["summary_latencies"]
+    similarities = execution_stats["retrieval_similarities"]
+    compress_ratios = execution_stats["compression_ratios"]
     
     model_details = {
         "embedding_model": "CLIP ViT-B/32 (sentence-transformers, 150M params)",
@@ -231,11 +231,11 @@ def api_metrics():
     
     return {
         "averages": {
-            "search_latency_sec": sum(search_lats) / len(search_lats),
-            "generation_latency_sec": sum(gen_lats) / len(gen_lats),
-            "summary_latency_sec": sum(sum_lats) / len(sum_lats),
-            "retrieval_similarity": sum(similarities) / len(similarities),
-            "compression_ratio": sum(compress_ratios) / len(compress_ratios),
+            "search_latency_sec": sum(search_lats) / len(search_lats) if search_lats else 0.0,
+            "generation_latency_sec": sum(gen_lats) / len(gen_lats) if gen_lats else 0.0,
+            "summary_latency_sec": sum(sum_lats) / len(sum_lats) if sum_lats else 0.0,
+            "retrieval_similarity": sum(similarities) / len(similarities) if similarities else 0.0,
+            "compression_ratio": sum(compress_ratios) / len(compress_ratios) if compress_ratios else 0.0,
         },
         "details": {
             "search_latencies": search_lats,
