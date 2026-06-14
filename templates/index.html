@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multimodal RAG and Summarization System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">▲</span>
+                    <h2>Intelligence Engine</h2>
+                </div>
+                <p class="subtitle">Offline Multimodal RAG & Summary</p>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="section-title">SYSTEM STATUS</div>
+            <div class="status-panel">
+                <div class="status-item">
+                    <span class="status-label">LLM:</span>
+                    <span class="status-value highlight-purple">Qwen 2.5 (0.5B)</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">CLIP:</span>
+                    <span class="status-value highlight-blue">ViT-B/32</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">BLIP:</span>
+                    <span class="status-value highlight-cyan">Captioner</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Mode:</span>
+                    <span class="status-value highlight-green">CPU-Only</span>
+                </div>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="section-header-row">
+                <span class="section-title">DOCUMENT STORE</span>
+                <button id="btn-refresh-docs" class="btn-icon" title="Refresh Document List">⟳</button>
+            </div>
+            
+            <div id="document-list" class="document-list">
+                <div class="loading-spinner">Loading documents...</div>
+            </div>
+            
+            <div class="sidebar-footer">
+                <button id="btn-warmup" class="btn btn-secondary btn-full">Warmup Models</button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="main-header">
+                <nav class="nav-tabs">
+                    <button class="tab-link active" data-tab="tab-rag" id="nav-tab-rag">Multimodal RAG</button>
+                    <button class="tab-link" data-tab="tab-summarizer" id="nav-tab-summarizer">Summarizer</button>
+                    <button class="tab-link" data-tab="tab-metrics" id="nav-tab-metrics">System Metrics & Evaluation</button>
+                </nav>
+            </header>
+
+            <div class="active-doc-banner" id="active-doc-banner">
+                <span class="banner-title">No document selected. Please select and index a PDF in the sidebar.</span>
+            </div>
+
+            <div class="tab-viewport">
+                
+                <section id="tab-rag" class="tab-pane active">
+                    <div class="rag-layout">
+                        <div class="card glass-card query-console">
+                            <h3 class="card-title">Ask a Multimodal Question</h3>
+                            <p class="card-subtitle">Search using text and/or images. The system will retrieve context from the PDF and generate an answer.</p>
+                            
+                            <form id="rag-query-form" onsubmit="return false;">
+                                <div class="form-group">
+                                    <label for="rag-query-text">Text Query / Question</label>
+                                    <textarea id="rag-query-text" placeholder="e.g. Describe the concept of sets, or ask about specific diagrams..."></textarea>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Upload Query Image (Optional)</label>
+                                    <div class="image-upload-area" id="rag-image-dropzone">
+                                        <input type="file" id="rag-query-image" accept="image/*" class="file-input-hidden">
+                                        <div class="upload-placeholder" id="rag-upload-placeholder">
+                                            <span class="upload-icon">📸</span>
+                                            <span>Drag & drop or click to upload a query image</span>
+                                            <span class="upload-note">JPG, PNG supported</span>
+                                        </div>
+                                        <div class="image-preview-container hidden" id="rag-image-preview-container">
+                                            <img id="rag-image-preview" src="" alt="Query Preview">
+                                            <button type="button" class="btn-close" id="btn-clear-rag-image">&times;</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="control-row">
+                                    <div class="k-selector">
+                                        <label for="rag-top-k">Retrieve Contexts (k):</label>
+                                        <select id="rag-top-k">
+                                            <option value="3">Top 3 Chunks</option>
+                                            <option value="5" selected>Top 5 Chunks</option>
+                                            <option value="7">Top 7 Chunks</option>
+                                        </select>
+                                    </div>
+                                    <button type="button" id="btn-submit-rag" class="btn btn-primary">
+                                        <span class="btn-text">Execute RAG Search</span>
+                                        <div class="spinner hidden" id="rag-spinner"></div>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        
+                        <div class="rag-results-container">
+                            <div class="card glass-card response-card">
+                                <div class="card-header-row">
+                                    <h3 class="card-title">Generated Answer</h3>
+                                    <div id="rag-time-stats" class="time-stats">Ready</div>
+                                </div>
+                                <div id="rag-llm-response" class="response-placeholder">
+                                    Submit a query to generate an answer.
+                                </div>
+                            </div>
+                            
+                            <div class="retrieved-contexts-header">
+                                <h3>Retrieved Context Blocks</h3>
+                            </div>
+                            <div id="retrieved-contexts-list" class="contexts-list">
+                                <div class="no-results-placeholder">No contexts retrieved yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <section id="tab-summarizer" class="tab-pane">
+                    <div class="summarizer-layout">
+                        <div class="card glass-card summarizer-input">
+                            <h3 class="card-title">Document & Text Summarizer</h3>
+                            <p class="card-subtitle">Summarize input text and/or images into 2-5 succinct sentences in under 1 minute.</p>
+                            
+                            <form id="summarize-form" onsubmit="return false;">
+                                <div class="form-group">
+                                    <label for="sum-input-text">Text Content to Summarize</label>
+                                    <textarea id="sum-input-text" class="tall-textarea" placeholder="Paste the text you want to summarize here, or select a text block from search results..."></textarea>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Add Context Image (Optional)</label>
+                                    <div class="image-upload-area" id="sum-image-dropzone">
+                                        <input type="file" id="sum-query-image" accept="image/*" class="file-input-hidden">
+                                        <div class="upload-placeholder" id="sum-upload-placeholder">
+                                            <span class="upload-icon">🖼️</span>
+                                            <span>Drag & drop or click to upload a context image</span>
+                                            <span class="upload-note">JPG, PNG supported</span>
+                                        </div>
+                                        <div class="image-preview-container hidden" id="sum-image-preview-container">
+                                            <img id="sum-image-preview" src="" alt="Summary Preview">
+                                            <button type="button" class="btn-close" id="btn-clear-sum-image">&times;</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="control-row-right">
+                                    <button type="button" id="btn-submit-summarize" class="btn btn-primary">
+                                        <span class="btn-text">Generate Summary</span>
+                                        <div class="spinner hidden" id="sum-spinner"></div>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        
+                        <div class="card glass-card summarizer-output">
+                            <div class="card-header-row">
+                                <h3 class="card-title">Generated Summary (2-5 lines)</h3>
+                                <div id="sum-time-stats" class="time-stats">Ready</div>
+                            </div>
+                            
+                            <div class="summary-body">
+                                <div id="summary-text-output" class="summary-placeholder">
+                                    Summary will appear here.
+                                </div>
+                            </div>
+                            
+                            <div class="divider"></div>
+                            
+                            <div class="metrics-grid">
+                                <div class="metric-card">
+                                    <span class="metric-label">Execution Time</span>
+                                    <span class="metric-value" id="metric-sum-time">--</span>
+                                </div>
+                                <div class="metric-card">
+                                    <span class="metric-label">Compression Ratio</span>
+                                    <span class="metric-value" id="metric-sum-ratio">--</span>
+                                </div>
+                                <div class="metric-card">
+                                    <span class="metric-label">Status</span>
+                                    <span class="metric-value highlight-green" id="metric-sum-status">Idle</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <section id="tab-metrics" class="tab-pane">
+                    <div class="metrics-dashboard-layout">
+                        <div class="card glass-card span-col-2">
+                            <h3 class="card-title">Offline Engine Infrastructure</h3>
+                            <div class="model-specs-grid" id="metrics-model-details">
+                                <div class="spec-item">
+                                    <strong>Embedding Engine:</strong> <span>Loading...</span>
+                                </div>
+                                <div class="spec-item">
+                                    <strong>Captioning Engine:</strong> <span>Loading...</span>
+                                </div>
+                                <div class="spec-item">
+                                    <strong>Causal LLM Engine:</strong> <span>Loading...</span>
+                                </div>
+                                <div class="spec-item">
+                                    <strong>Hardware Context:</strong> <span>Loading...</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card glass-card">
+                            <h3 class="card-title">Latency Statistics (CPU)</h3>
+                            <p class="card-subtitle">Local average response times</p>
+                            
+                            <div class="stat-bars">
+                                <div class="bar-item">
+                                    <div class="bar-label-row">
+                                        <span>Multimodal Vector Search</span>
+                                        <strong id="val-search-lat">--s</strong>
+                                    </div>
+                                    <div class="bar-track">
+                                        <div class="bar-fill blue" id="fill-search-lat" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                
+                                <div class="bar-item">
+                                    <div class="bar-label-row">
+                                        <span>RAG LLM Text Generation</span>
+                                        <strong id="val-gen-lat">--s</strong>
+                                    </div>
+                                    <div class="bar-track">
+                                        <div class="bar-fill purple" id="fill-gen-lat" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                
+                                <div class="bar-item">
+                                    <div class="bar-label-row">
+                                        <span>Summarizer Pipeline</span>
+                                        <strong id="val-sum-lat">--s</strong>
+                                    </div>
+                                    <div class="bar-track">
+                                        <div class="bar-fill teal" id="fill-sum-lat" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card glass-card">
+                            <h3 class="card-title">Retrieval & Compression Quality</h3>
+                            <p class="card-subtitle">Metrics validating indexing and synthesis methods</p>
+                            
+                            <div class="stat-bars">
+                                <div class="bar-item">
+                                    <div class="bar-label-row">
+                                        <span>Mean Cosine Similarity Score</span>
+                                        <strong id="val-mean-sim">--</strong>
+                                    </div>
+                                    <div class="bar-track">
+                                        <div class="bar-fill green" id="fill-mean-sim" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                
+                                <div class="bar-item">
+                                    <div class="bar-label-row">
+                                        <span>Average Compression Ratio</span>
+                                        <strong id="val-mean-compress">--</strong>
+                                    </div>
+                                    <div class="bar-track">
+                                        <div class="bar-fill orange" id="fill-mean-compress" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="divider"></div>
+                            <div class="evaluation-note">
+                                <strong>Method Justification:</strong>
+                                <ul>
+                                    <li><strong>CLIP Embeddings</strong> provide unified cross-modal vector alignment, allowing images and texts to be matched interchangeably.</li>
+                                    <li><strong>Cosine Similarity (Inner Product)</strong> on normalized embeddings scales similarity directly between 0.0 and 1.0.</li>
+                                    <li><strong>BLIP Captioning</strong> extracts semantically rich text from images so that textual questions can retrieve graphical assets.</li>
+                                    <li><strong>Qwen 2.5 (0.5B)</strong> operates with negligible latency on CPU and generates accurate summaries in under 15 seconds.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+            </div>
+        </main>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>
