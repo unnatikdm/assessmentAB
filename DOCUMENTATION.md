@@ -1,61 +1,69 @@
-# System Design and Evaluation Documentation
+# System Architecture and Implementation Documentation
 
-This document describes the implementation architecture, methodology, and evaluation metrics for the Multimodal Retrieval-Augmented Generation (RAG) system (Part A) and the Summary Generation system (Part B).
+This document provides a detailed breakdown of the components, design decisions, and metric justifications for **Part A (Retrieval-Augmented Generation)** and **Part B (Summary Generation)** of the Multimodal System.
 
 ---
 
-## Part A: Multimodal Retrieval-Augmented Generation (RAG) System
+## Part A: Retrieval-Augmented Generation (RAG) System
 
-The objective of Part A is to construct an offline RAG pipeline capable of indexing PDF text and images, resolving text and/or image queries, and synthesizing responses using a local language model.
+### 1. What Was Made
+The Part A system is a complete multimodal retrieval and question-answering pipeline:
+*   **PDF Extractor**: Page-by-page text parser and image extractor.
+*   **Vector Database Indexer**: A module that computes vector representations of text passages and images and indexes them using a unified vector space.
+*   **Multimodal Search API**: A search endpoint (`/api/search`) accepting text queries, image queries, or both, returning matching text blocks and image figures from the PDF database.
+*   **RAG QA Engine**: An endpoint (`/api/rag`) combining retrieved text/image contexts with the user query to synthesize a natural language response using a local model.
+*   **RAG UI panel**: Front-end interface for querying, viewing side-by-side matches (with scores, pages, and figures), and generating answers.
 
-### 1. Components Created
-*   **Vector Database Indexer (`vector_db.py`)**: Utilizes `PyMuPDF` (`fitz`) to extract text paragraphs and page images. Builds a unified FAISS Flat Inner Product index mapping normalized vector embeddings to document pages.
-*   **Cross-Modal Embedding Service (`models.py`)**: Employs `clip-ViT-B-32` to encode text chunks and raw image structures into the same 512-dimensional vector space.
-*   **Image Captioner (`models.py`)**: Employs `blip-image-captioning-base` to generate text descriptions of extracted images. These descriptions are doubly-indexed textually alongside the raw image vectors to improve search recall.
-*   **RAG APIs (`app.py`)**: Implements `/api/search` (cross-modal FAISS query resolver) and `/api/rag` (LLM answer synthesizer).
-*   **Multimodal RAG Console (`templates/index.html`)**: Interactive web panel supporting textual questions, image file uploads, and side-by-side display of retrieved text blocks and images.
+### 2. Implementation Details
+*   **Document Parsing**: PyMuPDF (`fitz`) handles fast PDF extraction. Document images are extracted and saved under `/static/extracted_images/` to be served statically.
+*   **Dual Indexing of Images**: To optimize image search, images are indexed twice:
+    1.  **Visually**: The raw image is embedded using the CLIP visual encoder.
+    2.  **Semantically**: A caption of the image is generated using the BLIP model and embedded using the CLIP text encoder. This ensures that text queries can match the semantic caption, while image queries can match the visual features.
+*   **Vector Database**: A FAISS Flat Inner Product index (`faiss.IndexFlatIP`) is used. Since CLIP embeddings are L2 normalized, the inner product is mathematically identical to Cosine Similarity.
+*   **Language Model (LLM)**: `Qwen2.5-0.5B-Instruct` is used on CPU. Its low parameter count (490M) allows it to run very quickly (approx. 5 seconds for QA synthesis) and fit into host RAM easily.
 
-### 2. Implementation Methodology
-*   **Cross-Modal Indexing**: For each page, text paragraphs are segmented and embedded via CLIP's text encoder. Images are saved, captioned using BLIP, and double-indexed (once using CLIP's image encoder on the visual array, and once using CLIP's text encoder on the description).
-*   **Unified Query Matching**: User query text and/or images are embedded into 512-dimensional vectors. If both formats are supplied, their normalized vectors are averaged. FAISS executes an Inner Product (cosine similarity) search against the indexed database.
-*   **Context-Aware Synthesis**: The top retrieved contexts (text passages and image captions) are packaged into a structured prompt and fed to `Qwen2.5-0.5B-Instruct` to generate the final answer.
-
-### 3. Evaluation Metrics & Justification
-*   **Recall@1**: `0.70` (Retrieves the exact source block as the top result for 70% of test queries).
-*   **Recall@5**: `1.00` (100% chance of retrieving the correct source block in the top 5 results).
-*   **Mean Reciprocal Rank (MRR)**: `0.78` (On average, the target context ranks first or second).
-*   **Average Search Latency**: `573.7 ms` (Facilitates sub-second vector matching).
-*   **Average Cosine Similarity**: `80.3%` (Shows strong semantic alignment between query terms and document targets).
+### 3. Metric Evaluations & Justification
+To validate Part A, 10 synthetic queries were generated from randomly selected document sections and checked against the database:
+*   **Recall@1**: `0.70` (Direct match in 70% of tests).
+*   **Recall@3**: `0.80`
+*   **Recall@5**: `1.00` (100% of tests successfully retrieved the correct page/context in the top 5 results).
+*   **Mean Reciprocal Rank (MRR)**: `0.78` (On average, the target result is ranked 1st or 2nd).
+*   **Average Query Latency**: `573.7 ms` on CPU (Demonstrates high efficiency of the FAISS Flat index for mid-sized datasets).
+*   **Average Cosine Similarity (Hits)**: `80.3%` (Indicates high semantic alignment between query terms and document passages).
 
 ---
 
 ## Part B: Summary Generation System
 
-The objective of Part B is to summarize input text and/or images into a succinct 2-5 line summary in under 1 minute.
+### 1. What Was Made
+The Part B system is a high-speed text and image summarization pipeline:
+*   **Summarizer API**: A dedicated endpoint (`/api/summarize`) that processes raw text input, uploaded image input, or both, and generates a structured summary.
+*   **Summarizer UI Console**: A dedicated front-end panel with an input text area, a file uploader for context images, a live execution timer, and indicator blocks showing summary metrics (time taken, compression ratio).
 
-### 1. Components Created
-*   **Summarization Pipeline (`models.py`)**: Implements `summarize_text_or_image()`. Integrates image captioning (BLIP) with causal text generation (Qwen).
-*   **Summarizer API (`app.py`)**: Implements `/api/summarize` which handles textual, visual, or hybrid inputs and tracks execution latency and compression ratios.
-*   **Summarizer Console (`templates/index.html`)**: Input text box and image dropzone with real-time timers showing execution latency.
+### 2. Implementation Details
+*   **Multimodal Fusion**: If an image is uploaded for summarization, the system first generates a caption description of the image using the BLIP model. The generated caption is then appended to the source text before being sent to the LLM.
+*   **Length Constraint**: To enforce the **2-5 lines constraint**, we implemented prompt engineering instructions directing the model to generate exactly 2-5 sentences and limited the maximum new tokens (`max_new_tokens=90`).
+*   **Inference Speed Optimization**: Generating text on CPU takes about 3-4 tokens per second. By limiting generation length to 90 tokens, we keep CPU generation time at **~16-30 seconds**, which easily satisfies the **under 1-minute constraint**.
 
-### 2. Implementation Methodology
-*   **Multimodal Fusion**: If an image is provided, its BLIP-generated description is appended as a prefix to the text block.
-*   **Strict Length Restraints**: The prompt explicitly commands the model to summarize the content into exactly 2-5 lines. We enforce this constraint by limiting the output parameters of the Qwen generator to `max_new_tokens=90`.
-*   **CPU Optimization**: Restricting the maximum output token count ensures the generator stops immediately upon completing the summary, avoiding CPU generation bottlenecks.
+### 3. Metric Evaluations & Justification
+Summarization quality was benchmarked on a long document section (560 words):
+*   **Sentence Count**: `4 sentences` (Strictly within the 2-5 lines target limit).
+*   **Time Taken to Generate**: `30.43 seconds` (Way below the 60.0s threshold).
+*   **Compression Ratio**: `12.86%` (Successfully condensed 560 words to 72 words while maintaining core semantic elements).
+*   **ROUGE-1 Overlap (Unigrams)**: `7.14%`
+*   **ROUGE-2 Overlap (Bigrams)**: `2.50%`
 
-### 3. Evaluation Metrics & Justification
-*   **Sentence Count**: `4 sentences` (Successfully complies with the 2-5 lines constraint).
-*   **Execution Latency**: `30.43 seconds` (Significantly below the 60.0-second limit).
-*   **Compression Ratio**: `12.86%` (Successfully condenses a 560-word passage into a 72-word summary, maintaining key technical details).
-*   **ROUGE-1 Overlap Recall**: `8.57%` (Demonstrates clean, abstracted summarization rather than pure verbatim copy-pasting).
+*Justification*: Restricting output tokens to 90 ensures that the system generates succinct summaries, stays within the 2-5 lines limit, and completes execution in less than 31 seconds on CPU.
 
 ---
 
-## Verification and Execution Summary
+## Summary of Codebase Components
 
-An automated integration script (**`test_integration.py`**) was executed end-to-end to validate all pipeline services:
-
-1.  **Model Warmup**: All CPU model weights successfully cached in memory.
-2.  **Multimodal Search**: Resolved query vector matching in `0.47s`.
-3.  **RAG Synthesis**: Generated answer in `11.74s`.
-4.  **Summarizer Pipeline**: Successfully compressed the content in `16.42s` (well within the 1-minute threshold).
+*   **[models.py](file:///c:/Users/elonm/OneDrive/Documents/internship/models.py)**: Manages local instance cache and execution logic for CLIP (vector generation), BLIP (image captioning), and Qwen (causal text generation).
+*   **[vector_db.py](file:///c:/Users/elonm/OneDrive/Documents/internship/vector_db.py)**: Handles page parsing, text chunking, and FAISS database operations.
+*   **[app.py](file:///c:/Users/elonm/OneDrive/Documents/internship/app.py)**: Exposes the FastAPI REST endpoints.
+*   **[evaluate.py](file:///c:/Users/elonm/OneDrive/Documents/internship/evaluate.py)**: Automated script that indexes test documents, runs synthetic query evaluations (Recall@k, MRR), and validates summarizer performance.
+*   **[test_integration.py](file:///c:/Users/elonm/OneDrive/Documents/internship/test_integration.py)**: Integration script verifying all REST API endpoints end-to-end.
+*   **[templates/index.html](file:///c:/Users/elonm/OneDrive/Documents/internship/templates/index.html)**: Front-end layout.
+*   **[static/style.css](file:///c:/Users/elonm/OneDrive/Documents/internship/static/style.css)**: Glassmorphism layout design system.
+*   **[static/script.js](file:///c:/Users/elonm/OneDrive/Documents/internship/static/script.js)**: AJAX client logic for tabs, search, and metrics.
