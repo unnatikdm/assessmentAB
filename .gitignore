@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+.locks/
+static/extracted_images/fuky*
