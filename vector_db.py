@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import fitz
 import faiss
 import numpy as np
@@ -13,6 +14,38 @@ IMAGES_DIR = "static/extracted_images"
 
 os.makedirs(INDEX_DIR, exist_ok=True)
 os.makedirs(IMAGES_DIR, exist_ok=True)
+
+def is_rtl(text: str) -> bool:
+    return any('\u0600' <= c <= '\u06ff' or '\u0750' <= c <= '\u077f' or '\ufb50' <= c <= '\ufdff' or '\ufe70' <= c <= '\ufeff' for c in text)
+
+def correct_rtl_line(line: str) -> str:
+    if not is_rtl(line):
+        return line
+    rev = line[::-1]
+    mirror_map = {
+        '(': ')', ')': '(',
+        '[': ']', ']': '[',
+        '{': '}', '}': '{',
+        '<': '>', '>': '<',
+        '«': '»', '»': '«',
+        '“': '”', '”': '“',
+        '‘': '’', '’': '‘'
+    }
+    mirrored = [mirror_map.get(char, char) for char in rev]
+    rev_mirrored = "".join(mirrored)
+    
+    def restore_ltr(match):
+        return match.group(0)[::-1]
+        
+    corrected = re.sub(r'[a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)*', restore_ltr, rev_mirrored)
+    return corrected
+
+def correct_rtl_text(text: str) -> str:
+    if not is_rtl(text):
+        return text
+    lines = text.split('\n')
+    corrected_lines = [correct_rtl_line(line) for line in lines]
+    return '\n'.join(corrected_lines)
 
 class VectorDB:
     def __init__(self, doc_id: str):
@@ -47,6 +80,7 @@ class VectorDB:
                 
             page = doc.load_page(page_num)
             page_text = page.get_text()
+            page_text = correct_rtl_text(page_text)
             
             paragraphs = [p.strip() for p in page_text.split("\n\n") if p.strip()]
             if not paragraphs and page_text.strip():
